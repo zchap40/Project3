@@ -1,0 +1,808 @@
+---
+title: "Akram_LandGeoLot_EDA"
+output: html_document
+---
+
+Load packages:
+
+```{r}
+library(Quandl)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(tidyquant)
+library(patchwork)
+library(lubridate)
+library(zoo)
+library(Hmisc)
+library(ggcorrplot)
+library(corrplot)
+library(ggpubr)
+
+path = "~/Desktop/NYCDSA/Homework/Project3/Akram/1 - EDA"
+setwd(path)
+
+```
+
+Import data frames:
+
+```{r}
+
+df_cleaned = read.csv("~/Desktop/NYCDSA/Homework/Project3/Akram/Data/cleaned.csv")
+
+df_engineered = read.csv("~/Desktop/NYCDSA/Homework/Project3/Akram/Data/engineered.csv")
+
+Ames_Start = as.Date("2006-01-01")
+Ames_End = as.Date("2010-12-31")
+
+TNX = tq_get("^TNX",
+             from = Ames_Start,
+             to = Ames_End,
+             get = "stock.prices"
+             ) %>%
+  select(date, adjusted) %>%
+  rename(rate = adjusted)
+
+TNX = TNX %>%
+  group_by(DateSold = lubridate::floor_date(date, "month")) %>%
+  summarise(Rate = mean(rate, na.rm=TRUE))
+
+head(TNX)
+
+df_cleaned = df_cleaned %>% 
+  mutate(
+    DaySold = as.integer(1), 
+    DateSold = make_date(YrSold,MoSold,DaySold)
+  )
+
+df_cleaned = df_cleaned %>%
+  relocate(DateSold, .after = PID) %>%
+  relocate(SalePrice, .before = GrLivArea) %>%
+  select(-c(X, YrSold, MoSold, DaySold)) %>%
+  arrange(ymd(df_cleaned$DateSold), SalePrice)
+
+head(df_cleaned)
+
+```
+
+Merge interest rate with main dataframe:
+
+```{r}
+
+# First, create logSalePrice column
+
+df_cleaned$logSalePrice = log10(df_cleaned$SalePrice)
+
+# Merge TNX with df_cleaned
+
+df_cleaned = df_cleaned %>%
+  left_join(TNX, by="DateSold") %>%
+  relocate(Rate, .after = SalePrice) %>%
+  relocate(logSalePrice, .after = SalePrice)
+
+head(df_cleaned)
+
+```
+
+
+Feature extraction for Land/Geography/Lot section:
+
+LotFrontage (feet): Linear feet of street connected to property (lots of NaN's - filled in with sqrt(LotArea) - could do with regression with LotArea). In my opinion, this category should be deleted.
+
+LotArea (feet^2): Lot size in square feet
+
+YearBuilt (YYYY): Original construction date
+YearRemodAdd (YYYY): Remodel date (same as construction date if no remodeling or additions)
+We will replace these categories with:
+Age - year(DateSold) minus YearBuilt
+YrsSinceRemod - year(DateSold) minus YearRemodAdd
+
+Street (Grvl / Pave): Type of road access to property
+Alley (NoAlley / Grvl / Pave): Type of alley access to property
+N.B. There are no entries where: 1) Street = Grvl & Alley = Grvl
+2) Street = Grvl & Alley = Pave
+So there is only: 0) Grvl/NoAlley 1) Pave/NoAlley 2) Pave/Grvl 3) Pave/Pave
+This is how we'll categorise the data in a new joint category: 
+StreetAlley - 0, 1, 2, 3
+
+```{r}
+#df_1 = filter(df_cleaned, Street == "Pave" & Alley == "Pave")
+#df_1
+
+#unique(df_cleaned$MSZoning)
+
+```
+
+
+LotShape (Reg / IR1 / IR2 / IR3): General shape of property
+We will categorise in order of rising irregularity as: 0, 1, 2, 3
+
+LandContour (Low / Lvl / Bnk / HLS): Flatness of the property
+We will categorise as 0, 1, 2, 3
+
+LandSlope (Gtl / Mod / Sev): Slope of property
+We will categorise as 0, 1, 2
+
+```{r}
+#df_2 = filter(df_cleaned, LandContour == "HLS" & LandSlope == "Gtl")
+#df_2
+```
+
+
+Utilities (NoSewr / AllPub): Type of utilities available - Note that virtually all entries are AllPub (only 2 are 'NoSewr')
+We will categorise as 0, 1 - but obviously it is not important to include this at all as there are not enough entries for training or prediction.
+
+```{r}
+#df_3 = filter(df_cleaned, Utilities == "NoSewr")
+#df_3
+
+df_3_1 = filter(df_cleaned, Electrical == "Mix")
+df_3_1
+# N.B. No entries in Electrical are categorised as 'Mix'
+# So we categorise in rank order from poor to good as follows:
+# FuseP, FuseF, FuseA, SBrkr
+# 0, 1, 2, 3
+```
+
+LotConfig (Inside / Corner / CulDSac / FR2 / FR3): Lot configuration
+We will categorise in order of desirability (4 being most desirable): 0, 1, 2, 3, 4
+
+Neighborhood (): Physical locations within Ames city limits
+One of the most significant categories. We will create a new neighborhood category, alongside original, that is an ordered int factor (based on EDA results):
+Neighborhood_Int - 0, 1, 2, ..., 25, 26, 27
+(MeadowV
+BrDale
+IDOTRR
+BrkSide
+OldTown
+Edwards
+SWISU
+Landmrk
+Sawyer
+NPkVill
+Blueste
+NAmes
+Mitchel
+SawyerW
+Gilbert
+NWAmes
+Greens
+Blmngtn
+CollgCr
+Crawfor
+ClearCr
+Somerst
+Timber
+Veenker
+GrnHill
+StoneBr
+NridgHt
+NoRidge)
+
+Condition1 (Norm / Feedr / Artery / RRAn / RRNn / RRAe / RRNe / PosA / PosN): Proximity to various conditions
+Condition2 (Norm / Feedr / Artery / RRAn / RRNn / RRAe / RRNe / PosA / PosN): Proximity to various conditions (if more than one is present)
+We will replace these two categories with three separate boolean categories:
+IsOnMainroad - 0, 1     Is TRUE if either Condition1 or Condition 2 is Feedr or Artery
+IsNearRailroad - 0, 1   Is TRUE if either Condition1 or Condition2 is RRAn, RRNn, RRAe, RRNe
+IsNearPark - 0, 1       Is TRUE if either Condition1 or Condition2 is PosA, PosN
+
+
+Feature Engineering for Land/Geography/Lot:
+
+```{r}
+
+#1 Delete LotFrontage
+
+df_cleaned = select(df_cleaned, -LotFrontage)
+
+#2 Construct RemodSinceBuilt and delete YearRemodAdd
+
+df_cleaned$RemodSinceBuilt = as.integer(df_cleaned$YearRemodAdd - df_cleaned$YearBuilt)
+df_cleaned = select(df_cleaned, -YearRemodAdd)
+
+#3 Construct Age and delete YearBuilt
+
+df_cleaned$Age = as.integer(year(df_cleaned$DateSold) - df_cleaned$YearBuilt)
+df_cleaned = select(df_cleaned, -YearBuilt)
+
+#4 Construct StreetAlley as ordered int factor and delete Street and Alley
+
+df_cleaned$Street_temp = as.integer(0)
+df_cleaned$Alley_temp = as.integer(0)
+
+df_cleaned$Street_temp[df_cleaned$Street == "Grvl"] = as.integer(0)
+df_cleaned$Street_temp[df_cleaned$Street == "Pave"] = as.integer(1)
+df_cleaned$Alley_temp[df_cleaned$Alley == "NoAlley"] = as.integer(0)
+df_cleaned$Alley_temp[df_cleaned$Alley == "Grvl"] = as.integer(1)
+df_cleaned$Alley_temp[df_cleaned$Alley == "Pave"] = as.integer(2)
+
+df_cleaned$StreetAlley = df_cleaned$Street_temp + df_cleaned$Alley_temp
+
+df_cleaned$StreetAlley = as.factor(df_cleaned$StreetAlley)
+
+df_cleaned$StreetAlley <- factor(df_cleaned$StreetAlley, levels = c(0, 1, 2, 3), ordered = TRUE)
+
+df_cleaned = select(df_cleaned, -c(Street, Alley, Street_temp, Alley_temp))
+
+#5 Convert LotShape into an ordered int factor
+
+df_cleaned$LotShape_temp = as.integer(0)
+
+df_cleaned$LotShape_temp[df_cleaned$LotShape == "Reg"] = as.integer(0)
+df_cleaned$LotShape_temp[df_cleaned$LotShape == "IR1"] = as.integer(1)
+df_cleaned$LotShape_temp[df_cleaned$LotShape == "IR2"] = as.integer(2)
+df_cleaned$LotShape_temp[df_cleaned$LotShape == "IR3"] = as.integer(3)
+
+df_cleaned$LotShape_temp = as.factor(df_cleaned$LotShape_temp)
+
+df_cleaned$LotShape_temp = factor(df_cleaned$LotShape_temp, levels = c(0, 1, 2, 3), ordered = TRUE)
+
+df_cleaned = select(df_cleaned, -LotShape)
+
+df_cleaned = rename(df_cleaned, LotShape = LotShape_temp)
+
+#6 Convert LandContour into an ordered int factor
+
+df_cleaned$LandContour_temp = as.integer(0)
+
+df_cleaned$LandContour_temp[df_cleaned$LandContour == "Low"] = as.integer(0)
+df_cleaned$LandContour_temp[df_cleaned$LandContour == "Lvl"] = as.integer(1)
+df_cleaned$LandContour_temp[df_cleaned$LandContour == "Bnk"] = as.integer(2)
+df_cleaned$LandContour_temp[df_cleaned$LandContour == "HLS"] = as.integer(3)
+
+df_cleaned$LandContour_temp = as.factor(df_cleaned$LandContour_temp)
+
+df_cleaned$LandContour_temp = factor(df_cleaned$LandContour_temp, levels = c(0, 1, 2, 3), ordered = TRUE)
+
+df_cleaned = select(df_cleaned, -LandContour)
+
+df_cleaned = rename(df_cleaned, LandContour = LandContour_temp)
+
+#7 Convert LandSlope into an ordered int factor
+
+df_cleaned$LandSlope_temp = as.integer(0)
+
+df_cleaned$LandSlope_temp[df_cleaned$LandSlope == "Gtl"] = as.integer(0)
+df_cleaned$LandSlope_temp[df_cleaned$LandSlope == "Mod"] = as.integer(1)
+df_cleaned$LandSlope_temp[df_cleaned$LandSlope == "Sev"] = as.integer(2)
+
+df_cleaned$LandSlope_temp = as.factor(df_cleaned$LandSlope_temp)
+
+df_cleaned$LandSlope_temp = factor(df_cleaned$LandSlope_temp, levels = c(0, 1, 2), ordered = TRUE)
+
+df_cleaned = select(df_cleaned, -LandSlope)
+
+df_cleaned = rename(df_cleaned, LandSlope = LandSlope_temp)
+
+#8 Delete Utilities
+
+df_cleaned = select(df_cleaned, -Utilities)
+
+#9 Convert LotConfig into an ordered int factor
+
+df_cleaned$LotConfig_temp = as.integer(0)
+
+df_cleaned$LotConfig_temp[df_cleaned$LotConfig == "FR2"] = as.integer(0)
+df_cleaned$LotConfig_temp[df_cleaned$LotConfig == "Inside"] = as.integer(1)
+df_cleaned$LotConfig_temp[df_cleaned$LotConfig == "Corner"] = as.integer(2)
+df_cleaned$LotConfig_temp[df_cleaned$LotConfig == "FR3"] = as.integer(3)
+df_cleaned$LotConfig_temp[df_cleaned$LotConfig == "CulDSac"] = as.integer(4)
+
+df_cleaned$LotConfig_temp = as.factor(df_cleaned$LotConfig_temp)
+
+df_cleaned$LotConfig_temp = factor(df_cleaned$LotConfig_temp, levels = c(0, 1, 2, 3, 4), ordered = TRUE)
+
+df_cleaned = select(df_cleaned, -LotConfig)
+
+df_cleaned = rename(df_cleaned, LotConfig = LotConfig_temp)
+
+#10 Creation of IsOnMainroad, IsNearRailroad, IsNearPark and deletion of Condition1 & 2
+
+df_cleaned$IsOnMainroad = ifelse(df_cleaned$Condition1=="Feedr"|df_cleaned$Condition1=="Artery"|df_cleaned$Condition2=="Feedr"|df_cleaned$Condition2=="Artery", as.integer(1), as.integer(0))
+
+df_cleaned$IsNearRailroad = ifelse(df_cleaned$Condition1=="RRAn"|df_cleaned$Condition1=="RRNn"|df_cleaned$Condition1=="RRAe"|df_cleaned$Condition1=="RRNe"|df_cleaned$Condition2=="RRAn"|df_cleaned$Condition2=="RRNn"|df_cleaned$Condition2=="RRAe"|df_cleaned$Condition2=="RRNe", as.integer(1), as.integer(0))
+
+df_cleaned$IsNearPark = ifelse(df_cleaned$Condition1=="PosA"|df_cleaned$Condition1=="PosN"|df_cleaned$Condition2=="PosA"|df_cleaned$Condition2=="PosN", as.integer(1), as.integer(0))
+
+df_cleaned$IsOnMainroad = as.factor(df_cleaned$IsOnMainroad)
+
+df_cleaned$IsOnMainroad = factor(df_cleaned$IsOnMainroad, levels = c(0, 1), ordered = TRUE)
+
+df_cleaned$IsNearRailroad = as.factor(df_cleaned$IsNearRailroad)
+
+df_cleaned$IsNearRailroad = factor(df_cleaned$IsNearRailroad, levels = c(0, 1), ordered = TRUE)
+
+df_cleaned$IsNearPark = as.factor(df_cleaned$IsNearPark)
+
+df_cleaned$IsNearPark = factor(df_cleaned$IsNearPark, levels = c(0, 1), ordered = TRUE)
+
+df_cleaned = select(df_cleaned, -c(Condition1,Condition2))
+
+#11 Creation of Neighborhood_Int as ordered int factor
+
+df_cleaned$Neighborhood_Int = as.integer(0)
+
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "MeadowV"] = as.integer(0)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "BrDale"] = as.integer(1)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "IDOTRR"] = as.integer(2)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "BrkSide"] = as.integer(3)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "OldTown"] = as.integer(4)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Edwards"] = as.integer(5)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "SWISU"] = as.integer(6)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Landmrk"] = as.integer(7)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Sawyer"] = as.integer(8)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "NPkVill"] = as.integer(9)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Blueste"] = as.integer(10)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "NAmes"] = as.integer(11)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Mitchel"] = as.integer(12)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "SawyerW"] = as.integer(13)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Gilbert"] = as.integer(14)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "NWAmes"] = as.integer(15)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Greens"] = as.integer(16)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Blmngtn"] = as.integer(17)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "CollgCr"] = as.integer(18)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Crawfor"] = as.integer(19)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "ClearCr"] = as.integer(20)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Somerst"] = as.integer(21)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Timber"] = as.integer(22)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "Veenker"] = as.integer(23)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "GrnHill"] = as.integer(24)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "StoneBr"] = as.integer(25)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "NridgHt"] = as.integer(26)
+df_cleaned$Neighborhood_Int[df_cleaned$Neighborhood == "NoRidge"] = as.integer(27)
+
+df_cleaned$Neighborhood_Int = as.factor(df_cleaned$Neighborhood_Int)
+
+df_cleaned$Neighborhood_Int = factor(df_cleaned$Neighborhood_Int, levels = c(0:27), ordered = TRUE)
+
+#12 Convert CentralAir into an ordered int factor
+
+df_cleaned$CentralAir_temp = as.integer(0)
+
+df_cleaned$CentralAir_temp[df_cleaned$CentralAir == "N"] = as.integer(0)
+df_cleaned$CentralAir_temp[df_cleaned$CentralAir == "Y"] = as.integer(1)
+
+df_cleaned$CentralAir_temp = as.factor(df_cleaned$CentralAir_temp)
+
+df_cleaned$CentralAir_temp = factor(df_cleaned$CentralAir_temp, levels = c(0, 1), ordered = TRUE)
+
+df_cleaned = select(df_cleaned, -CentralAir)
+
+df_cleaned = rename(df_cleaned, CentralAir = CentralAir_temp)
+
+#13 Creation of MSZoning_Int as ordered int factor
+
+df_cleaned$MSZoning_Int = as.integer(0)
+
+df_cleaned$MSZoning_Int[df_cleaned$MSZoning == "A (agr)"] = as.integer(0)
+df_cleaned$MSZoning_Int[df_cleaned$MSZoning == "C (all)"] = as.integer(1)
+df_cleaned$MSZoning_Int[df_cleaned$MSZoning == "I (all)"] = as.integer(2)
+df_cleaned$MSZoning_Int[df_cleaned$MSZoning == "RH"] = as.integer(3)
+df_cleaned$MSZoning_Int[df_cleaned$MSZoning == "FV"] = as.integer(4)
+df_cleaned$MSZoning_Int[df_cleaned$MSZoning == "RM"] = as.integer(5)
+df_cleaned$MSZoning_Int[df_cleaned$MSZoning == "RL"] = as.integer(6)
+
+df_cleaned$MSZoning_Int = as.factor(df_cleaned$MSZoning_Int)
+
+df_cleaned$MSZoning_Int = factor(df_cleaned$MSZoning_Int, levels = c(0:6), ordered = TRUE)
+
+# Relocate columns for tidyness
+
+df_cleaned = df_cleaned %>%
+  relocate(LotArea, .after = Rate) %>%
+  relocate(Neighborhood, .after = GrLivArea) %>%
+  relocate(IsNearPark, .after = Neighborhood) %>%
+  relocate(IsNearRailroad, .after = Neighborhood) %>%
+  relocate(IsOnMainroad, .after = Neighborhood) %>%
+  relocate(LotConfig, .after = Neighborhood) %>%
+  relocate(LandSlope, .after = Neighborhood) %>%  
+  relocate(LandContour, .after = Neighborhood) %>%  
+  relocate(LotShape, .after = Neighborhood) %>%  
+  relocate(StreetAlley, .after = Neighborhood) %>%    
+  relocate(RemodSinceBuilt, .after = Neighborhood) %>%   
+  relocate(Age, .after = Neighborhood) %>%
+  relocate(Neighborhood_Int, .after = Neighborhood) %>%
+  relocate(CentralAir, .after = Neighborhood_Int) %>%
+  relocate(MSZoning_Int, .after = Neighborhood_Int)
+  
+head(df_cleaned)
+
+write.csv(df_cleaned, "df_cleaned.csv")
+
+#df_4 = filter(df_cleaned, IsOnMainroad == "1")
+#df_4
+
+#levels(df_cleaned$StreetAlley)
+
+```
+
+
+This is a special script for Rishi's engineered csv. I want to replace the character date columns with the DateSold date column. Can't do it directly though his Python script, as his helpers script doesn't work in my Jupyter notebook.
+
+What I will do is extract PID, DateSold, Rate from my df_cleaned dataframe and merge it with df_engineered.
+
+Will also merge my other engineered features, and will make changes to the features everyone else has worked on that I think may improve model fitting.
+
+```{r}
+
+# Extract subset of columns from df_cleaned for insertion into df_engineered
+
+df_temp = df_cleaned %>%
+  select(PID, DateSold, Rate, logSalePrice, IsOnMainroad, IsNearPark, IsNearRailroad, LotConfig, LandSlope, LandContour, LotShape, StreetAlley, RemodSinceBuilt, Age, Neighborhood_Int, CentralAir, MSZoning_Int)
+
+# Delete unnecessary columns from df_engineered
+
+df_engineered = select(df_engineered, -c(X, YrSold, MoSold, LogSalePrice, LotFrontage, Street, Alley, LotShape, LandContour, Utilities, LotConfig, LandSlope, Condition1, Condition2, YearBuilt, YearRemodAdd, IsNearNegativeCondition, IsNearPositiveCondition, CentralAir))
+
+# Merge df_temp with df_engineered
+
+df_engineered = df_engineered %>%
+  left_join(df_temp, by="PID") %>%
+  relocate(DateSold, .after = PID) %>%
+  relocate(SalePrice, .after = DateSold) %>%
+  relocate(logSalePrice, .after = SalePrice) %>%
+  relocate(Rate, .after = logSalePrice) %>%
+  relocate(LotArea, .after = Rate) %>%
+  relocate(Neighborhood, .after = GrLivArea) %>%
+  relocate(IsNearPark, .after = Neighborhood) %>%
+  relocate(IsNearRailroad, .after = Neighborhood) %>%
+  relocate(IsOnMainroad, .after = Neighborhood) %>%
+  relocate(LotConfig, .after = Neighborhood) %>%
+  relocate(LandSlope, .after = Neighborhood) %>%  
+  relocate(LandContour, .after = Neighborhood) %>%  
+  relocate(LotShape, .after = Neighborhood) %>%  
+  relocate(StreetAlley, .after = Neighborhood) %>%    
+  relocate(RemodSinceBuilt, .after = Neighborhood) %>%   
+  relocate(Age, .after = Neighborhood) %>%
+  relocate(Neighborhood_Int, .after = Neighborhood) %>%
+  relocate(CentralAir, .after = Neighborhood_Int) %>%
+  relocate(MSZoning_Int, .after = Neighborhood_Int)
+  
+df_engineered =  df_engineered %>%
+  arrange(ymd(df_engineered$DateSold), SalePrice)
+
+head(df_engineered)
+
+write.csv(df_engineered, "df_engineered.csv")
+
+```
+
+
+Correlation matrix:
+
+```{r}
+
+#df_eng_temp = df_engineered %>% 
+#  mutate_if(is.character,as.factor)
+
+model.matrix(~0+., data=df_engineered) %>% 
+  cor(use="complete.obs") %>% 
+  #cor(use="pairwise.complete.obs") %>% 
+  ggcorrplot(show.diag = F, type="lower", lab=FALSE, lab_size=0, tl.cex=0.5, tl.srt=90)
+
+ggsave("fig1.pdf")
+
+
+```
+
+
+Exploratory Data Analysis:
+
+```{r}
+
+#1 LotArea
+
+mean_1 = mean(df_cleaned$LotArea)
+sd_1 = sd(df_cleaned$LotArea)
+
+fig2 = ggscatter(df_cleaned, x = "LotArea", y = "SalePrice", 
+          #add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          size = 0.15, color = "blue",
+          cor.coef.coord = c(7.5e4,5e5),
+          xtickslab.rt = 45,
+          xlab = "Lot Area (sq feet)", ylab = "SalePrice (USD)") +
+        theme(axis.text = element_text(face="bold")) +
+        theme(axis.title = element_text(face="bold"))  + annotate(geom = "text", label = paste("Mean = ", signif(mean_1,4), "\nStandard Dev = ", signif(sd_1,4)),
+           x = 7.4e4,
+           y = 6e5,
+           angle = 0,
+           hjust=0,
+           #colour = "blue",
+           fontface =2)
+
+fig3 = ggscatter(df_cleaned, x = "LotArea", y = "logSalePrice", 
+          add = "reg.line", conf.int = TRUE, 
+          #cor.coef = TRUE, cor.method = "pearson",
+          size = 0.15, color = "blue",
+          cor.coef.coord = c(1.25e4,6),
+          xtickslab.rt = 45,
+          xlab = "Lot Area (sq feet)", ylab = "log(SalePrice)",
+          xlim = c(0,30000), ylim=c(4,6.25)) +
+        theme(axis.text = element_text(face="bold")) +
+        theme(axis.title = element_text(face="bold"))# + annotate(geom = "text", label = paste("Mean = ", signif(mean_1,2), "\nStandard Dev = ", signif(sd_1,2)),
+#           x = 2.4,
+#           y = 5e5,
+#           angle = 0,
+#           hjust=0,
+#           #colour = "blue",
+#           fontface =2)
+
+fig2 + fig3
+
+ggsave("fig2-3.pdf")
+
+
+#2 Neighbourhood
+
+cor.result_2 = cor.test(as.integer(df_cleaned$Neighborhood_Int), df_cleaned$SalePrice, method=c("pearson"))
+
+fig4 = ggplot(df_cleaned, aes(x = reorder(Neighborhood, SalePrice), y = SalePrice, fill=Neighborhood)) +
+        geom_boxplot(outlier.size = 0.5) +
+        labs(x="Neighborhood") +
+        coord_flip() +
+        stat_summary(fun.y=mean, geom="point", shape=17, size=1, color="red", fill="black")         + theme(legend.position = "none") + theme(axis.text = element_text(face="bold")) + theme(axis.title = element_text(face="bold"))  + annotate(geom = "text", label = paste("R = ", signif(cor.result_2$estimate,2)),
+           x = 4,
+           y = 5.5e5,
+           angle = 0,
+           hjust=0,
+           colour = "blue",
+           fontface =2)
+        
+fig4
+
+ggsave("fig4.pdf")
+
+#3 RemodSinceBuilt
+
+mean_3 = mean(df_cleaned$RemodSinceBuilt)
+sd_3 = sd(df_cleaned$RemodSinceBuilt)
+
+fig5 = ggscatter(df_cleaned, x = "RemodSinceBuilt", y = "logSalePrice", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          size = 0.25, color = "blue",
+          cor.coef.coord = c(0,4.25),
+          xtickslab.rt = 45,
+          xlab = "Period Between Remodel and Build Date (years)", ylab = "SalePrice (USD)")         + theme(axis.text = element_text(face="bold")) +
+          theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("Mean = ", signif(mean_3,4), "\nStandard Dev = ", signif(sd_3,4)),
+           x = 80,
+           y = 4.33,
+           angle = 0,
+           hjust=0,
+           #colour = "blue",
+           fontface =2)
+
+fig5
+
+ggsave("fig5.pdf")
+
+#4 Age
+
+mean_4 = mean(df_cleaned$Age)
+sd_4 = sd(df_cleaned$Age)
+
+fig6 = ggscatter(df_cleaned, x = "Age", y = "logSalePrice", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          size = 0.25, color = "blue",
+          cor.coef.coord = c(0,4.25),
+          xtickslab.rt = 45,
+          xlab = "Age (years)", ylab = "SalePrice (USD)")  +
+        theme(axis.text = element_text(face="bold")) +
+        theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("Mean = ", signif(mean_4,4), "\nStandard Dev = ", signif(sd_4,4)),
+           x = 80,
+           y = 4.33,
+           angle = 0,
+           hjust=0,
+           #colour = "blue",
+           fontface =2)
+
+fig6
+
+ggsave("fig6.pdf")
+
+#5 StreetAlley
+
+cor.result_5 = cor.test(as.integer(df_cleaned$StreetAlley), df_cleaned$SalePrice, method=c("pearson"))
+
+fig7 = ggplot(df_cleaned, aes(x = reorder(StreetAlley, SalePrice), y = SalePrice, fill=StreetAlley)) +
+        geom_boxplot() +
+        labs(x="StreetAlley") +
+        coord_flip() +
+        stat_summary(fun.y=mean, geom="point", shape=17, size=2, color="red", fill="black") + theme(legend.position = c(0.75,0.4)) + scale_fill_discrete(labels = c("Gravel / NoAlley (0)", "Paved / NoAlley (1)", "Paved / Gravel (2)", "Paved / Paved (3)"))  +
+        theme(axis.text = element_text(face="bold")) +
+        theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("R = ", signif(cor.result_6$estimate,2), "\np-value = ", signif(cor.result_6$p.value,2)),
+           x = 0.9,
+           y = 4.1e5,
+           angle = 0,
+           hjust=0,
+           colour = "blue",
+           fontface =2)
+        
+fig7
+
+ggsave("fig7.pdf")
+
+#6 LotShape
+
+cor.result_6 = cor.test(as.integer(df_cleaned$LotShape), df_cleaned$SalePrice, method=c("pearson"))
+
+fig8 = ggplot(df_cleaned, aes(x = reorder(LotShape, SalePrice), y = SalePrice, fill=LotShape)) +
+        geom_boxplot() +
+        labs(x="Lot Shape") +
+        coord_flip() +
+        stat_summary(fun.y=mean, geom="point", shape=17, size=2, color="red", fill="black") + theme(legend.position = c(0.87,0.62)) + scale_fill_discrete(labels = c("Regular (0)", "Irregular1 (1)", "Irregular2 (2)", "Irregular3 (3)")) +
+        theme(axis.text = element_text(face="bold")) +
+        theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("R = ", signif(cor.result_6$estimate,2), "\np-value = ", signif(cor.result_6$p.value,2)),
+           x = 1.5,
+           y = 5e5,
+           angle = 0,
+           hjust=0,
+           colour = "blue",
+           fontface =2)
+        
+fig8
+
+ggsave("fig8.pdf")
+
+#7 LandContour
+
+cor.result_7 = cor.test(as.integer(df_cleaned$LandContour), df_cleaned$SalePrice, method=c("pearson"))
+
+fig9 = ggplot(df_cleaned, aes(x = reorder(LandContour, SalePrice), y = SalePrice, fill=LandContour)) +
+        geom_boxplot() +
+        labs(x="Land Contour") +
+        coord_flip() +
+        stat_summary(fun.y=mean, geom="point", shape=17, size=2, color="red", fill="black") + theme(legend.position = c(0.87,0.62)) + scale_fill_discrete(labels = c("Low (0)", "Level (1)", "Banked (2)", "Hillside (3)")) +
+        theme(axis.text = element_text(face="bold")) +
+        theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("R = ", signif(cor.result_7$estimate,2), "\np-value = ", signif(cor.result_7$p.value,2)),
+           x = 1.5,
+           y = 5e5,
+           angle = 0,
+           hjust=0,
+           colour = "blue",
+           fontface =2)
+        
+fig9
+
+ggsave("fig9.pdf")
+
+#8 LandSlope
+
+cor.result_8 = cor.test(as.integer(df_cleaned$LandSlope), df_cleaned$SalePrice, method=c("pearson"))
+
+fig10 = ggplot(df_cleaned, aes(x = reorder(LandSlope, SalePrice), y = SalePrice, fill=LandSlope)) +
+        geom_boxplot() +
+        labs(x="Land Slope") +
+        coord_flip() +
+        stat_summary(fun.y=mean, geom="point", shape=17, size=2, color="red", fill="black")       + theme(legend.position = c(0.842,0.75)) + scale_fill_discrete(labels = c("Gentle (0)", "Moderate (1)", "Severe (2)")) + theme(axis.text = element_text(face="bold")) +
+        theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("R = ", signif(cor.result_8$estimate,2), "\np-value = ", signif(cor.result_8$p.value,2)),
+           x = 1.5,
+           y = 5e5,
+           angle = 0,
+           hjust=0,
+           colour = "blue",
+           fontface =2)
+        
+fig10
+
+ggsave("fig10.pdf")
+
+#9 LotConfig
+
+cor.result_9 = cor.test(as.integer(df_cleaned$LotConfig), df_cleaned$SalePrice, method=c("pearson"))
+
+fig11 = ggplot(df_cleaned, aes(x = reorder(LotConfig, SalePrice), y = SalePrice, fill=LotConfig)) +
+        geom_boxplot() +
+        labs(x="Lot Configuration") +
+        coord_flip() +
+        stat_summary(fun.y=mean, geom="point", shape=17, size=2, color="red", fill="black") + theme(legend.position = c(0.87,0.6)) + scale_fill_discrete(labels = c("2-Side Frontage (0)", "Inside Lot (1)", "Corner Lot (2)", "3-Side Frontage (3)", "Cul De Sac (4)")) +
+        theme(axis.text = element_text(face="bold")) +
+        theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("R = ", signif(cor.result_9$estimate,2), "\np-value = ", signif(cor.result_9$p.value,2)),
+           x = 1.4,
+           y = 5e5,
+           angle = 0,
+           hjust=0,
+           colour = "blue",
+           fontface =2)
+        
+fig11
+
+ggsave("fig11.pdf")
+
+#10 IsOnMainroad
+
+cor.result_10 = cor.test(as.integer(df_cleaned$IsOnMainroad), df_cleaned$SalePrice, method=c("pearson"))
+
+fig12 = ggplot(df_cleaned, aes(x = reorder(IsOnMainroad, SalePrice), y = SalePrice, fill=IsOnMainroad)) +
+        geom_boxplot() +
+        labs(x="Is On Mainroad?") +
+        coord_flip() +
+        stat_summary(fun.y=mean, geom="point", shape=17, size=2, color="red", fill="black")       + theme(legend.position = c(0.842,0.5)) + scale_fill_discrete(labels = c("No (0)", "Yes (1)")) + theme(axis.text = element_text(face="bold")) + theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("R = ", signif(cor.result_10$estimate,2), "\np-value = ", signif(cor.result_10$p.value,2)),
+           x = 2.4,
+           y = 5e5,
+           angle = 0,
+           hjust=0,
+           colour = "blue",
+           fontface =2)
+        
+fig12
+
+ggsave("fig12.pdf")
+
+#11 IsNearRailroad
+
+cor.result_11 = cor.test(as.integer(df_cleaned$IsNearRailroad), df_cleaned$SalePrice, method=c("pearson"))
+
+fig13 = ggplot(df_cleaned, aes(x = reorder(IsNearRailroad, SalePrice), y = SalePrice, fill=IsNearRailroad)) +
+        geom_boxplot() +
+        labs(x="Is Near Railroad?") +
+        coord_flip() +
+        stat_summary(fun.y=mean, geom="point", shape=17, size=2, color="red", fill="black")       + theme(legend.position = c(0.842,0.5)) + scale_fill_discrete(labels = c("No (0)", "Yes (1)")) + theme(axis.text = element_text(face="bold")) + theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("R = ", signif(cor.result_11$estimate,2), "\np-value = ", signif(cor.result_11$p.value,2)),
+           x = 2.4,
+           y = 5e5,
+           angle = 0,
+           hjust=0,
+           colour = "blue",
+           fontface =2)
+        
+fig13
+
+ggsave("fig13.pdf")
+
+#12 IsNearPark
+
+cor.result_12 = cor.test(as.integer(df_cleaned$IsNearPark), df_cleaned$SalePrice, method=c("pearson"))
+
+fig14 = ggplot(df_cleaned, aes(x = reorder(IsNearPark, SalePrice), y = SalePrice, fill=IsNearPark)) +
+        geom_boxplot() +
+        labs(x="Is Near Park?") +
+        coord_flip() +
+        stat_summary(fun.y=mean, geom="point", shape=17, size=2, color="red", fill="black")       + theme(legend.position = c(0.842,0.5)) + scale_fill_discrete(labels = c("No (0)", "Yes (1)")) + theme(axis.text = element_text(face="bold")) + theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("R = ", signif(cor.result_12$estimate,2), "\np-value = ", signif(cor.result_12$p.value,2)),
+           x = 2.4,
+           y = 5e5,
+           angle = 0,
+           hjust=0,
+           colour = "blue",
+           fontface =2)
+        
+fig14
+
+ggsave("fig14.pdf")
+
+#13 Rate
+
+mean_13 = mean(df_cleaned$Rate)
+sd_13 = sd(df_cleaned$Rate)
+
+fig15 = ggscatter(df_cleaned, x = "Rate", y = "SalePrice", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          size = 0.25, color = "blue",
+          #cor.coef.coord = c(0,0),
+          xtickslab.rt = 45,
+          xlab = "Interest Rate (%)", ylab = "SalePrice (USD)") +
+        theme(axis.text = element_text(face="bold")) +
+        theme(axis.title = element_text(face="bold")) + annotate(geom = "text", label = paste("Mean = ", signif(mean_13,2), "\nStandard Dev = ", signif(sd_13,2)),
+           x = 2.4,
+           y = 5e5,
+           angle = 0,
+           hjust=0,
+           #colour = "blue",
+           fontface =2)
+
+fig15
+
+ggsave("fig15.pdf")
+
+#13 Time Series
+
+
+
+
+
+```
+
+
+

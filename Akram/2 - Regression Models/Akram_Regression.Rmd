@@ -1,0 +1,335 @@
+---
+title: "Akram_Regression"
+output: html_notebook
+---
+
+Load packages:
+
+```{r}
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(patchwork)
+library(lubridate)
+library(zoo)
+library(Hmisc)
+library(ggcorrplot)
+library(corrplot)
+library(ggpubr)
+library(caret)
+library(car)
+library(glmnet)
+library(modelr)
+library(broom)
+library(matrixStats)
+
+path = "~/Desktop/NYCDSA/Homework/Project3/Akram/2 - Regression Models"
+setwd(path)
+
+```
+
+
+AIC/BIC function:
+
+```{r}
+
+AICBIC=function(fit, type){
+  if (length(deviance(fit))==1) {
+    tLL = -deviance(fit)
+    edf = fit$df
+    n = nobs(fit)
+  } else if (length(deviance(fit$finalModel))>1) {
+    tLL = -min(deviance(fit$finalModel))
+    edf = fit$finalModel$df[which.min(deviance(fit$finalModel))]
+    n = fit$finalModel$nobs
+  }
+  AIC_ = -tLL + 2*edf
+  BIC_ = log(n)*edf - tLL
+  if (identical(type,"aic")|identical(type,"AIC")) {
+    return(AIC_)
+  } else if (identical(type,"bic")|identical(type,"BIC")) {
+    return(BIC_)
+  } else {
+   return("Error! Unknown type") 
+  }
+}
+
+```
+
+
+
+Import data:
+
+```{r}
+
+df_engineered = read.csv("~/Desktop/NYCDSA/Homework/Project3/Akram/1 - EDA/df_engineered.csv", stringsAsFactors = TRUE)
+
+head(df_engineered)
+
+```
+
+Engineer a custom dataframe with best features:
+
+```{r}
+
+df_akram = select(df_engineered, c(PID, logSalePrice, GrLivArea, LotArea, Neighborhood_Int, Neighborhood, Age, StreetAlley, RemodSinceBuilt, LotShape, LandContour, LandSlope, LotConfig, IsOnMainroad, IsNearPark, IsNearRailroad, BsmtQual, RoofStyle, OverallQual, OverallCond, ExterQual, Exterior1st, Exterior2nd, BsmtExposure, Rate, BldgType, MSZoning, Foundation, TotalBsmtSF, Heating, KitchenQual, Fireplaces, GarageType, GarageQual, GarageCond, GarageFinish, GarageCars, KitchenAbvGr, PavedDrive, EnclosedPorch, SaleCondition, ScreenPorch, HouseStyle, BsmtFullBath, AllBathrooms, FullBath, FireplaceQu, Functional, TotRmsAbvGrd, BedroomAbvGr, HeatingQC, CentralAir, MSZoning_Int))
+
+write.csv(df_akram, "df_Backprop_Engineered.csv")
+
+#MSSubClass
+#SaleType
+#RoofMatl
+
+```
+
+
+Linear regression model:
+
+```{r}
+
+set.seed(100)
+
+df_sample = createDataPartition(df_akram$PID, p=0.7, list=FALSE)
+
+train_set = df_akram[df_sample, ]
+test_set = df_akram[-df_sample, ]
+
+Linear_Model = lm(logSalePrice ~
+                    GrLivArea +
+                    LotArea +
+                    Neighborhood +
+                    Age +
+                    StreetAlley +
+                    RemodSinceBuilt +
+                    LotShape +
+                    LandContour +
+                    LandSlope +
+                    LotConfig +
+                    IsOnMainroad +
+                    IsNearPark +
+                    IsNearRailroad +
+                    BsmtQual +
+                    RoofStyle +
+                    OverallQual +
+                    OverallCond +
+                    ExterQual +
+                    Exterior1st +
+                    BsmtExposure +
+                    Rate +
+                    BldgType +
+                    MSZoning +
+                    Foundation +
+                    TotalBsmtSF +
+                    Heating +
+                    KitchenQual +
+                    Fireplaces +
+                    GarageQual +
+                    GarageCond +
+                    GarageFinish +
+                    GarageCars +
+                    KitchenAbvGr +
+                    PavedDrive +
+                    EnclosedPorch +
+                    SaleCondition +
+                    ScreenPorch +
+                    HouseStyle +
+                    BsmtFullBath +
+                    FullBath +
+                    FireplaceQu +
+                    Functional +
+                    TotRmsAbvGrd +
+                    BedroomAbvGr +
+                    HeatingQC +
+                    CentralAir,
+                  data = train_set)
+
+# + MSSubClass + SaleType + RoofMatl
+# + GarageType + Exterior2nd +
+
+summary(Linear_Model)
+
+R2_Train = summary(Linear_Model)$adj.r.squared
+
+R2_Train
+
+Linear_Model_Prediction = predict(Linear_Model, test_set)
+
+R2_Test = R2(Linear_Model_Prediction, test_set$logSalePrice)
+RMSE_Test = RMSE(Linear_Model_Prediction, test_set$logSalePrice)
+MAE_Test = MAE(Linear_Model_Prediction, test_set$logSalePrice)
+#AIC_Linear = AIC(Linear_Model)
+AIC_Linear = AICBIC(Linear_Model, "aic")
+#BIC_Linear = BIC(Linear_Model)
+BIC_Linear = AICBIC(Linear_Model, "bic")
+GVIF = vif(Linear_Model)
+Max_GVIF = max(GVIF[,3])
+
+#R2_Test
+#RMSE_Test
+#MAE_Test
+#Max_GVIF
+#AIC_Linear
+#BIC_Linear
+
+#GVIF
+
+df_eng_temp = select(df_akram, -PID)
+
+model.matrix(~0+., data=df_eng_temp) %>% 
+  #cor(use="complete.obs") %>% 
+  cor(use="pairwise.complete.obs") %>% 
+  ggcorrplot(show.diag = F, type="lower", lab=FALSE, lab_size=2, tl.cex=2, tl.srt=90)
+
+ggsave("Master_Correlation_Matrix.pdf")
+
+corr_matrix = model.matrix(~0+., data=df_eng_temp) %>% 
+  #cor(use="complete.obs") %>% 
+  cor(use="pairwise.complete.obs")
+
+which(corr_matrix > 0.9 & corr_matrix !=1, arr.ind=T)
+
+```
+
+
+Linear model results summary:
+
+```{r}
+
+sink("Linear_Model_Results.txt")
+cat(paste("Ames Linear Regression Model Results:"),
+    paste("R^2 Training = ", R2_Train), 
+    paste("R^2 Test = ", R2_Test), 
+    paste("RMSE Test = ", RMSE_Test), 
+    paste("GVIF Max = ", Max_GVIF),
+    paste("AIC = ", AIC_Linear),
+    paste("BIC = ", BIC_Linear, "\n"),
+    paste(colnames(df_Elastic_Engineered)), sep="\n")
+sink()
+
+cat(paste("Ames Linear Regression Model Results:"),
+    paste("R^2 Training = ", R2_Train), 
+    paste("R^2 Test = ", R2_Test), 
+    paste("RMSE Test = ", RMSE_Test), 
+    paste("GVIF Max = ", Max_GVIF),
+    paste("AIC = ", AIC_Linear),
+    paste("BIC = ", BIC_Linear), sep="\n")
+
+```
+
+
+Elastic-Net Regression Model:
+
+```{r}
+
+# First, let's create a new dataframe and get rid of columns we don't need:
+
+df_Elastic_Engineered = select(df_akram, -c(PID, GarageType, Exterior2nd, Neighborhood_Int, AllBathrooms))
+
+write.csv(df_Elastic_Engineered, "df_Elastic_Engineered.csv")
+
+#Neighborhood_Int
+#AllBathrooms
+
+# As before, we split the data into a training and test set
+
+set.seed(200)
+
+training.samples = df_Elastic_Engineered$logSalePrice %>%
+  createDataPartition(p = 0.7, list = FALSE)
+
+train.data = df_Elastic_Engineered[training.samples, ]
+
+test.data = df_Elastic_Engineered[-training.samples, ]
+
+# Now we need to dummify all non numerical columns with model.matrix:
+
+# Training Predictor variables
+x = model.matrix(logSalePrice~., train.data)[,-1]
+
+# Training Outcome variable
+y = train.data$logSalePrice
+
+# Test Predictor variables
+x.test = model.matrix(logSalePrice~., test.data)[,-1]
+
+# We compute the cross validation error rate and find the best lambda:
+
+set.seed(300)
+
+Cross_Val_ER = cv.glmnet(x, y, alpha = 0)
+
+lambda_ = Cross_Val_ER$lambda.min
+
+# We build the elastic net regression model:
+
+set.seed(400)
+
+Elastic_Model = train(
+  x, y, method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 10
+)
+
+# Best tuning parameters
+
+Elastic_Alpha = Elastic_Model$bestTune$alpha
+
+Elastic_Lambda = Elastic_Model$bestTune$lambda
+
+coef(Elastic_Model$finalModel, Elastic_Model$bestTune$lambda)
+
+# Make predictions on the test data:
+
+Elastic_Predictions = Elastic_Model %>% 
+  predict(x.test)
+
+Elastic_Predictions_Train = Elastic_Model %>% 
+  predict(x)
+
+R2_Elastic_Train = R2(Elastic_Predictions_Train, train.data$logSalePrice)
+R2_Elastic_Test = R2(Elastic_Predictions, test.data$logSalePrice)
+RMSE_Elastic_Test = RMSE(Elastic_Predictions, test.data$logSalePrice)
+AIC_Elastic = AICBIC(Elastic_Model, "aic")
+BIC_Elastic = AICBIC(Elastic_Model, "bic")
+
+```
+
+Elastic regression model results summary:
+
+```{r}
+
+sink("Elastic_Model_Results.txt")
+cat(paste("Ames Elastic Regression Model Results:"),
+    paste("R^2 Train = ", R2_Elastic_Train), 
+    paste("R^2 Test = ", R2_Elastic_Test),
+    paste("RMSE Test = ", RMSE_Elastic_Test),
+    paste("AIC = ", AIC_Elastic),
+    paste("BIC = ", BIC_Elastic),
+    paste("Alpha = ", Elastic_Alpha), 
+    paste("Lambda = ", Elastic_Lambda), sep="\n")
+cat(paste("\n\n"), paste(Elastic_Model$finalModel$xNames), sep="\n")
+sink()
+
+cat(paste("Ames Elastic Regression Model Results:"),
+    paste("R^2 Train = ", R2_Elastic_Train), 
+    paste("R^2 Test = ", R2_Elastic_Test),
+    paste("RMSE Test = ", RMSE_Elastic_Test),
+    paste("AIC = ", AIC_Elastic),
+    paste("BIC = ", BIC_Elastic),
+    paste("Alpha = ", Elastic_Alpha), 
+    paste("Lambda = ", Elastic_Lambda), sep="\n")
+
+```
+
+
+List of optimum model features:
+
+```{r}
+
+sink("Optimum_Model_Features.txt")
+cat(colnames(df_Elastic_Engineered), sep="\n")
+sink()
+
+```
+

@@ -1,0 +1,249 @@
+        NUMERICAL:
+
+LotFrontage: Linear feet of street connected to property
+LotArea: Lot size in square feet
+MasVnrArea: Masonry veneer area in square feet
+BsmtFinSF1: Type 1 finished square feet
+BsmtFinSF2: Type 2 finished square feet
+BsmtUnfSF: Unfinished square feet of basement area
+TotalBsmtSF: Total square feet of basement area
+1stFlrSF: First Floor square feet
+2ndFlrSF: Second floor square feet
+LowQualFinSF: Low quality finished square feet (all floors)
+GrLivArea: Above grade (ground) living area square feet
+GarageArea: Size of garage in square feet
+WoodDeckSF: Wood deck area in square feet
+OpenPorchSF: Open porch area in square feet
+EnclosedPorch: Enclosed porch area in square feet
+3SsnPorch: Three season porch area in square feet
+ScreenPorch: Screen porch area in square feet
+PoolArea: Pool area in square feet
+MiscVal: $Value of miscellaneous feature
+
+
+
+        TIMESERIES:
+
+YearBuilt: Original construction date
+YearRemodAdd: Remodel date (same as construction date if no remodeling or additions)
+GarageYrBlt: Year garage was built
+MoSold: Month Sold (MM)
+YrSold: Year Sold (YYYY)
+
+
+
+        CATEGORICAL:
+
+MSSubClass: Identifies the type of dwelling involved in the sale.
+MSZoning: Identifies the general zoning classification of the sale.
+Street: Type of road access to property
+Alley: Type of alley access to property
+LotShape: General shape of property
+LandContour: Flatness of the property
+Utilities: Type of utilities available
+LotConfig: Lot configuration
+LandSlope: Slope of property
+Neighborhood: Physical locations within Ames city limits
+Condition1: Proximity to various conditions
+
+       Artery	Adjacent to arterial street
+       Feedr	Adjacent to feeder street
+       Norm	Normal
+       RRNn	Within 200' of North-South Railroad
+       RRAn	Adjacent to North-South Railroad
+       PosN	Near positive off-site feature--park, greenbelt, etc.
+       PosA	Adjacent to postive off-site feature
+       RRNe	Within 200' of East-West Railroad
+       RRAe	Adjacent to East-West Railroad
+
+Condition2: Proximity to various conditions (if more than one is present)
+BldgType: Type of dwelling
+HouseStyle: Style of dwelling
+OverallQual: Rates the overall material and finish of the house
+OverallCond: Rates the overall condition of the house
+RoofStyle: Type of roof
+RoofMatl: Roof material
+Exterior1st: Exterior covering on house
+Exterior2nd: Exterior covering on house (if more than one material)
+MasVnrType: Masonry veneer type
+ExterQual: Evaluates the quality of the material on the exterior
+ExterCond: Evaluates the present condition of the material on the exterior
+Foundation: Type of foundation
+BsmtQual: Evaluates the height of the basement
+
+       Ex	Excellent (100+ inches)
+       Gd	Good (90-99 inches)
+       TA	Typical (80-89 inches)
+       Fa	Fair (70-79 inches)
+       Po	Poor (<70 inches
+       NA	No Basement
+
+BsmtCond: Evaluates the general condition of the basement
+BsmtExposure: Refers to walkout or garden level walls
+BsmtFinType1: Rating of basement finished area
+BsmtFinType2: Rating of basement finished area (if multiple types)
+Heating: Type of heating
+HeatingQC: Heating quality and condition
+CentralAir: Central air conditioning
+Electrical: Electrical system
+KitchenQual: Kitchen quality
+TotRmsAbvGrd: Total rooms above grade (does not include bathrooms)
+Functional: Home functionality (Assume typical unless deductions are warranted)
+Fireplaces: Number of fireplaces
+FireplaceQu: Fireplace quality
+GarageType: Garage location
+GarageFinish: Interior finish of the garage
+GarageCars: Size of garage in car capacity
+GarageQual: Garage quality
+GarageCond: Garage condition
+PavedDrive: Paved driveway
+PoolQC: Pool quality
+Fence: Fence quality
+MiscFeature: Miscellaneous feature not covered in other categories
+
+       Elev	Elevator
+       Gar2	2nd Garage (if not described in garage section)
+       Othr	Other
+       Shed	Shed (over 100 SF)
+       TenC	Tennis Court
+       NA	None
+
+SaleType: Type of sale
+SaleCondition: Condition of sale
+
+
+        BOOLEANS:
+
+BsmtFullBath: Basement full bathrooms
+BsmtHalfBath: Basement half bathrooms
+FullBath: Full bathrooms above grade
+HalfBath: Half baths above grade
+Bedroom: Bedrooms above grade (does NOT include basement bedrooms)
+Kitchen: Kitchens above grade
+
+
+
+
+
+
+
+
+__________________________________________________________________________
+Organized by Features of Property:
+
+        Sale Details--
+
+SalePrice ($): Property Sale Price in Dollars ****TARGET****
+MoSold (MM): Month Sold (MM)
+YrSold (YY): Year Sold (YYYY)
+SaleType (WD / ConLD / New / Oth / ConLw / CWD / COD / ConLI / VWD / Con): Type of sale
+SaleCondition (Normal / Abnorml / Family / Partial): Condition of sale
+MSSubClass: Identifies the type of dwelling involved in the sale.
+MSZoning (RL / C (all) / RM / FV / RH / A (agr) / I (all)): Identifies the general zoning classification of the sale.
+
+
+        Land/Geography/Lot--
+
+LotArea (feet^2): Lot size in square feet
+LotFrontage (feet): Linear feet of street connected to property (lots of NaN'
+YearBuilt (YYYY): Original construction date
+YearRemodAdd (YYYY): Remodel date (same as construction date if no remodeling or additions)
+Street (Grvl / Pave): Type of road access to property
+Alley (no alley / Grvl / Pave): Type of alley access to property
+
+N.B. There are no entries where: 1) Street = Grvl & Alley = Grvl
+2) Street = Grvl & Alley = Pave
+So there is only: 1) Grvl/NoAlley 2) Pave/NoAlley 3) Pave/Grvl 4) Pave/Pave
+
+LotShape (Reg / IR1 / IR2 / IR3): General shape of property
+LandContour (Low / Lvl / Bnk / HLS): Flatness of the property
+Utilities (AllPub / NoSewr): Type of utilities available - Note that virtually all entries are AllPub
+LotConfig (FR2 / Inside / Corner / FR3 / CulDSac): Lot configuration
+LandSlope (Gtl / Mod / Sev): Slope of property
+Neighborhood (): Physical locations within Ames city limits
+Condition1 (Norm / Artery / RRAn / RRAe / Feedr / PosN): Proximity to various conditions
+Condition2 (Norm / Artery / RRAn / RRAe / Feedr / PosN): Proximity to various conditions (if more than one is present)
+
+Added by Akram:
+
+30YrMortgageRate (%): Quand FMAC/MORTG
+TNX (%): Treasury Yield 10 Years (^TNX)
+
+
+        General House Details and Exterior--
+
+BldgType: Type of dwelling
+HouseStyle: Style of dwelling
+OverallQual: Rates the overall material and finish of the house
+OverallCond: Rates the overall condition of the house
+MasVnrArea: Masonry veneer area in square feet
+1stFlrSF: First Floor square feet
+2ndFlrSF: Second floor square feet
+LowQualFinSF: Low quality finished square feet (all floors)
+GrLivArea: Above grade (ground) living area square feet
+RoofStyle: Type of roof
+RoofMatl: Roof material
+Exterior1st: Exterior covering on house
+Exterior2nd: Exterior covering on house (if more than one material)
+MasVnrType: Masonry veneer type
+ExterQual: Evaluates the quality of the material on the exterior
+ExterCond: Evaluates the present condition of the material on the exterior
+Foundation: Type of foundation
+TotRmsAbvGrd: Total rooms above grade (does not include bathrooms)
+Fence: Fence quality
+Functional: Home functionality (Assume typical unless deductions are warranted)
+MiscFeature: Miscellaneous feature not covered in other categories
+MiscVal: $Value of miscellaneous feature
+
+        HVAC--
+
+Heating: Type of heating
+HeatingQC: Heating quality and condition
+CentralAir: Central air conditioning
+Electrical: Electrical system
+Fireplaces: Number of fireplaces
+FireplaceQu: Fireplace quality
+
+
+        Garage and Driveway--
+
+GarageArea: Size of garage in square feet
+GarageType: Garage location
+GarageFinish: Interior finish of the garage
+GarageCars: Size of garage in car capacity
+GarageQual: Garage quality
+GarageCond: Garage condition
+PavedDrive: Paved driveway
+
+        Basement--
+
+BsmtQual: Evaluates the height of the basement
+BsmtCond: Evaluates the general condition of the basement
+BsmtExposure: Refers to walkout or garden level walls
+BsmtFinType1: Rating of basement finished area
+BsmtFinType2: Rating of basement finished area (if multiple types)
+BsmtFinSF1: Type 1 finished square feet
+BsmtFinSF2: Type 2 finished square feet
+BsmtFullBath: Basement full bathrooms
+BsmtHalfBath: Basement half bathrooms
+BsmtUnfSF: Unfinished square feet of basement area
+TotalBsmtSF: Total square feet of basement area
+
+        Bedrooms, Bathrooms, and Kitchen--
+
+FullBath: Full bathrooms above grade
+HalfBath: Half baths above grade
+Bedroom: Bedrooms above grade (does NOT include basement bedrooms)
+Kitchen: Kitchens above grade
+KitchenQual: Kitchen quality
+
+
+        Yard, Porch, Deck, and Pool--
+
+WoodDeckSF: Wood deck area in square feet
+OpenPorchSF: Open porch area in square feet
+EnclosedPorch: Enclosed porch area in square feet
+3SsnPorch: Three season porch area in square feet
+ScreenPorch: Screen porch area in square feet
+PoolArea: Pool area in square feet
+PoolQC: Pool quality
